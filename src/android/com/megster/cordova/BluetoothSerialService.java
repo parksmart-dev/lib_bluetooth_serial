@@ -363,52 +363,112 @@ public class BluetoothSerialService {
             Log.i(TAG, "BEGIN mConnectThread SocketType:" + mSocketType);
             setName("ConnectThread" + mSocketType);
 
-            // Always cancel discovery because it will slow down a connection
-            mAdapter.cancelDiscovery();
-
-            // Make a connection to the BluetoothSocket
+            /*
+            * Cancelling discovery requires BLUETOOTH_SCAN on Android 12+.
+            * Do not allow a missing permission to crash the connection thread.
+            */
             try {
-                // This is a blocking call and will only return on a successful connection or an exception
-                Log.i(TAG,"Connecting to socket...");
-                mmSocket.connect();
-                Log.i(TAG,"Connected");
-            } catch (IOException e) {
-                Log.e(TAG, e.toString());
+                if (mAdapter != null) {
+                    mAdapter.cancelDiscovery();
+                }
+            } catch (SecurityException e) {
+                Log.e(TAG, "Unable to cancel Bluetooth discovery: permission denied", e);
+            }
 
-                // Some 4.1 devices have problems, try an alternative way to connect
-                // See https://github.com/don/BluetoothSerial/issues/89
+            boolean connectedSuccessfully = false;
+
+            /*
+            * Try the normal RFCOMM socket first, but only if socket creation
+            * succeeded in the ConnectThread constructor.
+            */
+            if (mmSocket != null) {
                 try {
-                    Log.i(TAG,"Trying fallback...");
-                    mmSocket = (BluetoothSocket) mmDevice.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(mmDevice,1);
+                    Log.i(TAG, "Connecting to socket...");
                     mmSocket.connect();
-                    Log.i(TAG,"Connected");
-                } catch (Exception e2) {
-                    Log.e(TAG, "Couldn't establish a Bluetooth connection.");
-                    try {
-                        mmSocket.close();
-                    } catch (IOException e3) {
-                        Log.e(TAG, "unable to close() " + mSocketType + " socket during connection failure", e3);
+                    connectedSuccessfully = true;
+                    Log.i(TAG, "Connected");
+                } catch (IOException e) {
+                    Log.e(TAG, "Normal Bluetooth connection failed", e);
+                } catch (SecurityException e) {
+                    Log.e(TAG, "Bluetooth connection permission denied", e);
+                    closeSocketQuietly();
+                    connectionFailed();
+                    return;
+                }
+            } else {
+                Log.e(TAG, "Initial BluetoothSocket was not created");
+            }
+
+            /*
+            * Some devices have problems with the normal RFCOMM connection.
+            * Retain the plugin's fallback connection method.
+            */
+            if (!connectedSuccessfully) {
+                try {
+                    Log.i(TAG, "Trying fallback connection...");
+
+                    closeSocketQuietly();
+
+                    mmSocket = (BluetoothSocket) mmDevice
+                        .getClass()
+                        .getMethod("createRfcommSocket", int.class)
+                        .invoke(mmDevice, 1);
+
+                    if (mmSocket == null) {
+                        throw new IOException(
+                            "Fallback Bluetooth socket creation returned null"
+                        );
                     }
+
+                    mmSocket.connect();
+                    connectedSuccessfully = true;
+
+                    Log.i(TAG, "Connected using fallback socket");
+                } catch (Exception fallbackException) {
+                    Log.e(
+                        TAG,
+                        "Couldn't establish a Bluetooth connection",
+                        fallbackException
+                    );
+
+                    closeSocketQuietly();
                     connectionFailed();
                     return;
                 }
             }
 
-            // Reset the ConnectThread because we're done
+            if (!connectedSuccessfully || mmSocket == null) {
+                Log.e(TAG, "Bluetooth connection did not complete");
+                closeSocketQuietly();
+                connectionFailed();
+                return;
+            }
+
             synchronized (BluetoothSerialService.this) {
                 mConnectThread = null;
             }
 
-            // Start the connected thread
             connected(mmSocket, mmDevice, mSocketType);
         }
 
-        public void cancel() {
+        private void closeSocketQuietly() {
+            if (mmSocket == null) {
+                return;
+            }
+
             try {
                 mmSocket.close();
             } catch (IOException e) {
-                Log.e(TAG, "close() of connect " + mSocketType + " socket failed", e);
+                Log.e(
+                    TAG,
+                    "Unable to close " + mSocketType + " socket",
+                    e
+                );
             }
+        }
+
+        public void cancel() {
+            closeSocketQuietly();
         }
     }
 
@@ -444,6 +504,12 @@ public class BluetoothSerialService {
             byte[] buffer = new byte[1024];
             int bytes;
 
+            if (mmInStream == null) {
+                Log.e(TAG, "Bluetooth input stream is unavailable");
+                connectionLost();
+                return;
+            }
+
             // Keep listening to the InputStream while connected
             while (true) {
                 try {
@@ -477,6 +543,11 @@ public class BluetoothSerialService {
          * @param buffer  The bytes to write
          */
         public void write(byte[] buffer) {
+            if (mmOutStream == null) {
+                Log.e(TAG, "Bluetooth output stream is unavailable");
+                connectionLost();
+                return;
+            }
             try {
                 mmOutStream.write(buffer);
 

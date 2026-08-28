@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <plugin
-    xmlns="http://www.phonegap.com/ns/plugins/1.0"
+    xmlns="http://apache.org/cordova/ns/plugins/1.0"
     xmlns:android="http://schemas.android.com/apk/res/android"
     id="cordova-plugin-bluetooth-serial"
-    version="0.4.7">
+    version="0.4.8-parksmart.1">
 
     <name>Bluetooth Serial</name>
     <description>Bluetooth Serial Communication Plugin</description>
     <license>Apache 2.0</license>
     <keywords>bluetooth, BLE, arduino</keywords>
-    <repo>https://github.com/don/BluetoothSerial.git</repo>
+    <repo>https://github.com/parksmart-dev/BluetoothSerial.git</repo>
     <issue>https://github.com/don/BluetoothSerial/issues</issue>
 
     <js-module src="www/bluetoothSerial.js" name="bluetoothSerial">
@@ -30,19 +30,34 @@
             target-dir="src/com/megster/cordova"/>
 
         <config-file target="AndroidManifest.xml" parent="/manifest">
-            <!--BLUETOOTH PERMISSION-->
-            <uses-permission android:name="android.permission.BLUETOOTH" />
-            <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-            <!-- Needed only if your app looks for Bluetooth devices. If your app doesn't use Bluetooth scan results to derive physical location information, you can strongly assert that your app doesn't derive physical location. -->
-            <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
-                android:usesPermissionFlags="neverForLocation"
-                />
-            <!-- Needed only if your app communicates with already-paired Bluetooth devices. -->
-            <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-            <!-- Needed only if your app uses Bluetooth scan results to derive physical location. -->
-            <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-            <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-        </config-file>
+
+        <!-- Legacy Bluetooth permissions for Android 11 and earlier -->
+        <uses-permission
+            android:name="android.permission.BLUETOOTH"
+            android:maxSdkVersion="30" />
+
+        <uses-permission
+            android:name="android.permission.BLUETOOTH_ADMIN"
+            android:maxSdkVersion="30" />
+
+        <!-- Runtime permissions for Android 12 and newer -->
+        <uses-permission
+            android:name="android.permission.BLUETOOTH_SCAN"
+            android:usesPermissionFlags="neverForLocation" />
+
+        <uses-permission
+            android:name="android.permission.BLUETOOTH_CONNECT" />
+
+        <!-- Device discovery on older Android versions -->
+        <uses-permission
+            android:name="android.permission.ACCESS_FINE_LOCATION"
+            android:maxSdkVersion="30" />
+
+        <uses-permission
+            android:name="android.permission.ACCESS_COARSE_LOCATION"
+            android:maxSdkVersion="28" />
+
+    </config-file>
 
     </platform>
 
