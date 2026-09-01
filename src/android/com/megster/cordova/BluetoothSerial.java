@@ -63,6 +63,7 @@ public class BluetoothSerial extends CordovaPlugin {
 
     private BluetoothAdapter bluetoothAdapter;
     private BluetoothSerialService bluetoothSerialService;
+    private BroadcastReceiver discoveryReceiver;
 
     // Debugging
     private static final String TAG = "BluetoothSerial";
@@ -155,14 +156,18 @@ public class BluetoothSerial extends CordovaPlugin {
         } else if (action.equals(DISCONNECT)) {
 
             connectCallback = null;
+            cancelDiscovery();
             bluetoothSerialService.stop();
             callbackContext.success();
 
         } else if (action.equals(WRITE)) {
 
             byte[] data = args.getArrayBuffer(0);
-            bluetoothSerialService.write(data);
-            callbackContext.success();
+            if (bluetoothSerialService.write(data)) {
+                callbackContext.success();
+            } else {
+                callbackContext.error("Could not write to Bluetooth device.");
+            }
 
         } else if (action.equals(AVAILABLE)) {
 
@@ -332,6 +337,7 @@ public class BluetoothSerial extends CordovaPlugin {
 
     @Override
     public void onDestroy() {
+        cancelDiscovery();
         super.onDestroy();
         if (bluetoothSerialService != null) {
             bluetoothSerialService.stop();
@@ -350,9 +356,14 @@ public class BluetoothSerial extends CordovaPlugin {
 
     private void discoverUnpairedDevices(final CallbackContext callbackContext) throws JSONException {
 
+        if (discoveryReceiver != null) {
+            callbackContext.error("Bluetooth device discovery is already in progress.");
+            return;
+        }
+
         final CallbackContext ddc = deviceDiscoveredCallback;
 
-        final BroadcastReceiver discoverReceiver = new BroadcastReceiver() {
+        discoveryReceiver = new BroadcastReceiver() {
 
             private JSONArray unpairedDevices = new JSONArray();
 
@@ -374,16 +385,44 @@ public class BluetoothSerial extends CordovaPlugin {
                     }
                 } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
                     callbackContext.success(unpairedDevices);
-                    cordova.getActivity().unregisterReceiver(this);
+                    unregisterDiscoveryReceiver();
                 }
             }
         };
 
         Activity activity = cordova.getActivity();
-        activity.registerReceiver(discoverReceiver, new IntentFilter(BluetoothDevice.ACTION_FOUND));
-        activity.registerReceiver(discoverReceiver, new IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED));
-        bluetoothAdapter.startDiscovery();
+        activity.registerReceiver(discoveryReceiver, new IntentFilter(BluetoothDevice.ACTION_FOUND));
+        activity.registerReceiver(discoveryReceiver, new IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED));
 
+        if (!bluetoothAdapter.startDiscovery()) {
+            unregisterDiscoveryReceiver();
+            callbackContext.error("Could not start Bluetooth device discovery.");
+        }
+
+
+    }
+
+    private void cancelDiscovery() {
+        if (bluetoothAdapter != null) {
+            try {
+                bluetoothAdapter.cancelDiscovery();
+            } catch (SecurityException e) {
+                Log.e(TAG, "Unable to cancel Bluetooth discovery: permission denied", e);
+            }
+        }
+
+        unregisterDiscoveryReceiver();
+    }
+
+    private void unregisterDiscoveryReceiver() {
+        if (discoveryReceiver != null) {
+            try {
+                cordova.getActivity().unregisterReceiver(discoveryReceiver);
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "Bluetooth discovery receiver was already unregistered", e);
+            }
+            discoveryReceiver = null;
+        }
 
     }
 
@@ -400,6 +439,12 @@ public class BluetoothSerial extends CordovaPlugin {
 
     private void connect(CordovaArgs args, boolean secure, CallbackContext callbackContext) throws JSONException {
         String macAddress = args.getString(0);
+
+        if (!BluetoothAdapter.checkBluetoothAddress(macAddress)) {
+            callbackContext.error("Invalid Bluetooth address: " + macAddress);
+            return;
+        }
+
         BluetoothDevice device = bluetoothAdapter.getRemoteDevice(macAddress);
 
         if (device != null) {

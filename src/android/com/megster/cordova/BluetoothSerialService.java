@@ -203,18 +203,19 @@ public class BluetoothSerialService {
     /**
      * Write to the ConnectedThread in an unsynchronized manner
      * @param out The bytes to write
+     * @return true when the bytes were written to the connected output stream
      * @see ConnectedThread#write(byte[])
      */
-    public void write(byte[] out) {
+    public boolean write(byte[] out) {
         // Create temporary object
         ConnectedThread r;
         // Synchronize a copy of the ConnectedThread
         synchronized (this) {
-            if (mState != STATE_CONNECTED) return;
+            if (mState != STATE_CONNECTED) return false;
             r = mConnectedThread;
         }
         // Perform the write unsynchronized
-        r.write(out);
+        return r.write(out);
     }
 
     /**
@@ -515,6 +516,13 @@ public class BluetoothSerialService {
                 try {
                     // Read from the InputStream
                     bytes = mmInStream.read(buffer);
+
+                    if (bytes == -1) {
+                        Log.i(TAG, "Bluetooth input stream closed");
+                        connectionLost();
+                        break;
+                    }
+
                     String data = new String(buffer, 0, bytes);
 
                     // Send the new data String to the UI Activity
@@ -542,20 +550,22 @@ public class BluetoothSerialService {
          * Write to the connected OutStream.
          * @param buffer  The bytes to write
          */
-        public void write(byte[] buffer) {
+        public boolean write(byte[] buffer) {
             if (mmOutStream == null) {
                 Log.e(TAG, "Bluetooth output stream is unavailable");
                 connectionLost();
-                return;
+                return false;
             }
             try {
                 mmOutStream.write(buffer);
 
                 // Share the sent message back to the UI Activity
                 mHandler.obtainMessage(BluetoothSerial.MESSAGE_WRITE, -1, -1, buffer).sendToTarget();
+                return true;
 
             } catch (IOException e) {
                 Log.e(TAG, "Exception during write", e);
+                return false;
             }
         }
 

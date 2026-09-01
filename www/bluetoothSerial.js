@@ -53,7 +53,9 @@ module.exports = {
             // assuming array of interger
             data = new Uint8Array(data).buffer;
         } else if (data instanceof Uint8Array) {
-            data = data.buffer;
+            var bytes = new Uint8Array(data.byteLength);
+            bytes.set(data);
+            data = bytes.buffer;
         }
 
         cordova.exec(success, failure, "BluetoothSerial", "write", [data]);
@@ -72,7 +74,7 @@ module.exports = {
     // calls the success callback when new data is available with an ArrayBuffer
     subscribeRawData: function (success, failure) {
 
-        successWrapper = function(data) {
+        var successWrapper = function(data) {
             // Windows Phone flattens an array of one into a number which
             // breaks the API. Stuff it back into an ArrayBuffer.
             if (typeof data === 'number') {
